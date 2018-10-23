@@ -1,0 +1,8 @@
+*.pyc
+.idea
+datasets/*
+!datasets/lfw_part_labels/perform_dataset.py
+!datasets/palettes
+assets/logs
+assets/tensorboard
+assets/trained_models
