@@ -91,82 +91,79 @@ def vis_seg(img, seg, palette, alpha=0.5):
 #         image = cv2.cvtColor(image, cv2.COLOR_HSV2RGB)
 #     return image
 
-# def _create_datagen(images, masks, img_gen, mask_gen):
-#     img_iter = img_gen.flow(images, seed=seed)
-#     # only hair
-#     mask_iter = mask_gen.flow(
-#         masks,
-#         # np.expand_dims(masks[:, :, :, 0], axis=4),
-#         # use same seed to apply same augmentation with image
-#         seed=seed
-#     )
-#
-#     def datagen():
-#         while True:
-#             img = img_iter.next()
-#             mask = mask_iter.next()
-#             yield img, mask
-#
-#     return datagen
+def _create_datagen(images, masks, img_gen, mask_gen):
+    img_iter = img_gen.flow(images, seed=seed)
+    mask_iter = mask_gen.flow(
+        masks,
+        # in need only hair, uncomment:
+        # np.expand_dims(masks[:, :, :, 0], axis=4),
+        seed=seed  # use same seed to apply same augmentation with image
+    )
+
+    def datagen():
+        while True:
+            img = img_iter.next()
+            mask = mask_iter.next()
+            yield img, mask
+
+    return datagen
 
 
-def load_data(img_file, mask_file):
+def load_data(img_file, mask_file, return_generator=False):
     images = np.load(img_file)
     masks = np.load(mask_file)
 
-    X_train, X_val, Y_train, Y_val = train_test_split(
+    x_train, x_val, y_train, y_val = train_test_split(
         images,
         masks,
         test_size=0.2,
         random_state=seed
     )
 
-    return X_train, X_val, Y_train, Y_val, images.shape[1:3]
+    train_gen, validation_gen = None, None
 
-    # train_img_gen = ImageDataGenerator(
-    #     featurewise_center=True,
-    #     featurewise_std_normalization=True,
-    #     # rescale=1. / 255,
-    #     rotation_range=20,
-    #     shear_range=0.2,
-    #     zoom_range=0.2,
-    #     # vertical_flip=True,  # debug
-    #     horizontal_flip=True,
-    # )
-    # train_img_gen.fit(images)
-    # train_mask_gen = ImageDataGenerator(
-    #     rescale=1. / 255,
-    #     rotation_range=20,
-    #     shear_range=0.2,
-    #     zoom_range=0.2,
-    #     # vertical_flip=True,  # debug
-    #     horizontal_flip=True,
-    # )
-    # train_gen = _create_datagen(
-    #     X_train,
-    #     Y_train,
-    #     img_gen=train_img_gen,
-    #     mask_gen=train_mask_gen
-    # )
-    #
-    # validation_img_gen = ImageDataGenerator(
-    #     featurewise_center=True,
-    #     featurewise_std_normalization=True,
-    #     horizontal_flip=True,
-    # )
-    # validation_img_gen.fit(images)
-    # validation_mask_gen = ImageDataGenerator(
-    #     rescale=1. / 255,
-    #     horizontal_flip=True,
-    # )
-    # validation_gen = _create_datagen(
-    #     X_val,
-    #     Y_val,
-    #     img_gen=validation_img_gen,
-    #     mask_gen=validation_mask_gen
-    # )
+    if return_generator:
+        train_img_gen = ImageDataGenerator(
+            featurewise_center=True,
+            featurewise_std_normalization=True,
+            rotation_range=20,
+            shear_range=0.2,
+            zoom_range=0.2,
+            # vertical_flip=True,  # debug
+            horizontal_flip=True,
+        )
+        train_img_gen.fit(images)
+        train_mask_gen = ImageDataGenerator(
+            rotation_range=20,
+            shear_range=0.2,
+            zoom_range=0.2,
+            # vertical_flip=True,  # debug
+            horizontal_flip=True,
+        )
+        train_gen = _create_datagen(
+            x_train,
+            y_train,
+            img_gen=train_img_gen,
+            mask_gen=train_mask_gen
+        )
 
-    # return train_gen, validation_gen, images.shape[1:3]
+        validation_img_gen = ImageDataGenerator(
+            featurewise_center=True,
+            featurewise_std_normalization=True,
+            horizontal_flip=True,
+        )
+        validation_img_gen.fit(images)
+        validation_mask_gen = ImageDataGenerator(
+            horizontal_flip=True,
+        )
+        validation_gen = _create_datagen(
+            x_val,
+            y_val,
+            img_gen=validation_img_gen,
+            mask_gen=validation_mask_gen
+        )
+
+    return x_train, x_val, y_train, y_val, images.shape[1:3], train_gen, validation_gen
 
 
 def create_data(data_dir, out_dir, img_size, debug=False):

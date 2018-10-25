@@ -3,14 +3,14 @@ import os
 import time
 from keras.models import load_model
 from keras.utils import CustomObjectScope
-from models.MobileUNet import custom_objects
 from scipy.misc import imresize
 from scipy.ndimage import imread
 import matplotlib.pyplot as plt
 import numpy as np
 from config import *
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # train on CPU only
+if CHECK_MODEL_ON_CPU_ONLY:
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 # import numpy as np
 # from PIL import Image
@@ -54,8 +54,11 @@ def standardize(image, mean=None, std=None):
     return x
 
 
-def evaluate_model(saved_model_to_evaluate_path, image_to_evaluate_path):
-    with CustomObjectScope(custom_objects()):
+def evaluate_model(saved_model_to_evaluate_path, image_to_evaluate_path, num_classes, custom_objects):
+    if custom_objects:
+        with CustomObjectScope(custom_objects(num_classes)):
+            model = load_model(saved_model_to_evaluate_path)
+    else:
         model = load_model(saved_model_to_evaluate_path)
 
     img = imread(image_to_evaluate_path)
@@ -66,6 +69,7 @@ def evaluate_model(saved_model_to_evaluate_path, image_to_evaluate_path):
 
     timestamp = time.time()
     prediction = model.predict(image_for_model)
+    # prediction = np.rint(prediction * 255).astype(int)
     prediction = prediction.reshape(IMAGE_WIDTH, IMAGE_HEIGHT, COLOR_CHANNELS)
     # Prediction has each pixel in color which corresponds some class(like green = background, red = hair and so on)
     elapsed = time.time() - timestamp
@@ -84,4 +88,9 @@ def evaluate_model(saved_model_to_evaluate_path, image_to_evaluate_path):
 
 
 if __name__ == '__main__':
-    evaluate_model(SAVED_MODEL_TO_EVALUATE_PATH, IMAGE_TO_EVALUATE_PATH)
+    if MODEL_NAME_TO_EVALUATE == 'MobileUNet':
+        from models.MobileUNet import custom_objects
+    elif MODEL_NAME_TO_EVALUATE == 'DeeplabV3plus':
+        from models.DeeplabV3plus import custom_objects
+
+    evaluate_model(SAVED_MODEL_TO_EVALUATE_PATH, IMAGE_TO_EVALUATE_PATH, NUM_CLASSES, custom_objects)

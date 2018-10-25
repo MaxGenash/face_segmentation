@@ -49,6 +49,8 @@ from keras.applications import imagenet_utils
 from keras.utils import conv_utils
 from keras.utils.data_utils import get_file
 
+import metrics
+
 WEIGHTS_PATH_X = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_xception_tf_dim_ordering_tf_kernels.h5"
 WEIGHTS_PATH_MOBILE = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_mobilenetv2_tf_dim_ordering_tf_kernels.h5"
 
@@ -274,7 +276,7 @@ def _inverted_res_block(inputs, expansion, stride, alpha, filters, block_id, ski
     return x
 
 
-def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3), classes=21, backbone='mobilenetv2', OS=16, alpha=1.):
+def DeeplabV3plus(weights=None, input_tensor=None, input_shape=(512, 512, 3), num_classes=21, backbone='mobilenetv2', OS=16, alpha=1.):
     """ Instantiates the Deeplabv3+ architecture
 
     Optionally loads weights pre-trained
@@ -288,7 +290,7 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
             to use as image input for the model.
         input_shape: shape of input image. format HxWxC
             PASCAL VOC model was trained on (512,512,3) images
-        classes: number of desired classes. If classes != 21,
+        num_classes: number of desired num_classes. If num_classes != 21,
             last layer is initialized randomly
         backbone: backbone to use. one of {'xception','mobilenetv2'}
         OS: determines input_shape/feature_extractor_output ratio. One of {8,16}.
@@ -489,14 +491,15 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
         x = SepConv_BN(x, 256, 'decoder_conv1',
                        depth_activation=True, epsilon=1e-5)
 
-    # you can use it with arbitary number of classes
-    if classes == 21:
+    # you can use it with arbitary number of num_classes
+    if num_classes == 21:
         last_layer_name = 'logits_semantic'
     else:
         last_layer_name = 'custom_logits_semantic'
 
-    x = Conv2D(classes, (1, 1), padding='same', name=last_layer_name)(x)
+    x = Conv2D(num_classes, (1, 1), padding='same', name=last_layer_name)(x)
     x = BilinearUpsampling(output_size=(input_shape[0], input_shape[1]))(x)
+    x = Activation('softmax')(x)
 
     # Ensure that the model takes into account
     # any potential predecessors of `input_tensor`.
@@ -505,7 +508,7 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
     else:
         inputs = img_input
 
-    model = Model(inputs, x, name='deeplabv3plus')
+    model = Model(inputs, x, name='DeeplabV3plus')
 
     # load weights
 
@@ -522,19 +525,22 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
     return model
 
 
-def preprocess_input(x):
-    """Preprocesses a numpy array encoding a batch of images.
-    # Arguments
-        x: a 4D numpy array consists of RGB values within [0, 255].
-    # Returns
-        Input array scaled to [-1.,1.]
-    """
-    return imagenet_utils.preprocess_input(x, mode='tf')
+def custom_objects(num_classes):
+    return {
+        'relu6': relu6,
+        'DepthwiseConv2D': DepthwiseConv2D,
+        'BilinearUpsampling': BilinearUpsampling,
+        'dice_coef_loss': metrics.dice_coef_loss,
+        'dice_coef': metrics.dice_coef,
+        'recall': metrics.recall,
+        'precision': metrics.precision,
+        'mean_iou': metrics.MeanIoU(num_classes).mean_iou
+    }
 
 
 # USAGE:
-# from model import Deeplabv3
-# deeplab_model = Deeplabv3((512,512,3), num_classes=4, last_activation=True, OS=16)
+# from model import DeeplabV3plus
+# deeplab_model = DeeplabV3plus((512,512,3), num_classes=4, last_activation=True, OS=16)
 # deeplab_model.load_weights('deeplabv3_weights_tf_dim_ordering_tf_kernels.h5', by_name = True)
 #
 # after that, you will have a usual Keras model, which you can train using fit, or fit_generator

@@ -3,6 +3,7 @@ from keras import Input
 from keras.engine import Model
 from keras.layers import DepthwiseConv2D, BatchNormalization, Activation, Conv2D, concatenate, Conv2DTranspose
 import metrics
+from config import NUM_CLASSES
 from models.layers.BilinearUpSampling import BilinearUpSampling2D
 
 def relu6(x): return K.relu(x, max_value=6)
@@ -211,12 +212,12 @@ def MobileUNet(num_classes,
     x = BilinearUpSampling2D(size=(2, 2))(x)
     x = Activation('sigmoid')(x)
 
-    model = Model(img_input, x)
+    model = Model(img_input, x, name='MobileUNet')
 
     return model
 
 
-def custom_objects():
+def custom_objects(num_classes):
     return {
         'relu6': relu6,
         'DepthwiseConv2D': DepthwiseConv2D,
@@ -225,6 +226,7 @@ def custom_objects():
         'dice_coef': metrics.dice_coef,
         'recall': metrics.recall,
         'precision': metrics.precision,
+        'mean_iou': metrics.MeanIoU(num_classes).mean_iou
     }
 
 
