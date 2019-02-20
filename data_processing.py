@@ -8,6 +8,7 @@ import os
 from glob import glob
 import numpy as np
 from keras.preprocessing.image import ImageDataGenerator
+from keras_applications import imagenet_utils
 from scipy.misc import imresize
 from scipy.ndimage import imread
 from sklearn.model_selection import train_test_split
@@ -75,21 +76,15 @@ def vis_seg(img, seg, palette, alpha=0.5):
     return vis
 
 
-# def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
-#                              sat_shift_limit=(-255, 255),
-#                              val_shift_limit=(-255, 255), u=0.5):
-#     if np.random.random() < u:
-#         image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-#         h, s, v = cv2.split(image)
-#         hue_shift = np.random.uniform(hue_shift_limit[0], hue_shift_limit[1])
-#         h = cv2.add(h, hue_shift)
-#         sat_shift = np.random.uniform(sat_shift_limit[0], sat_shift_limit[1])
-#         s = cv2.add(s, sat_shift)
-#         val_shift = np.random.uniform(val_shift_limit[0], val_shift_limit[1])
-#         v = cv2.add(v, val_shift)
-#         image = cv2.merge((h, s, v))
-#         image = cv2.cvtColor(image, cv2.COLOR_HSV2RGB)
-#     return image
+def preprocess_input(x):
+    """Preprocesses a numpy array encoding a batch of images.
+    # Arguments
+        x: a 4D numpy array consists of RGB values within [0, 255].
+    # Returns
+        Input array scaled to [-1.,1.]
+    """
+    return imagenet_utils.preprocess_input(x, mode='tf')
+
 
 def _create_datagen(images, masks, img_gen, mask_gen):
     img_iter = img_gen.flow(images, seed=seed)

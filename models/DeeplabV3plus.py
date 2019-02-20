@@ -50,6 +50,7 @@ from keras.utils import conv_utils
 from keras.utils.data_utils import get_file
 
 import metrics
+from models.layers.BilinearUpSampling import BilinearUpSampling2D
 
 WEIGHTS_PATH_X = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_xception_tf_dim_ordering_tf_kernels.h5"
 WEIGHTS_PATH_MOBILE = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_mobilenetv2_tf_dim_ordering_tf_kernels.h5"
@@ -80,9 +81,9 @@ class BilinearUpsampling(Layer):
     def compute_output_shape(self, input_shape):
         if self.upsampling:
             height = self.upsampling[0] * \
-                input_shape[1] if input_shape[1] is not None else None
+                     input_shape[1] if input_shape[1] is not None else None
             width = self.upsampling[1] * \
-                input_shape[2] if input_shape[2] is not None else None
+                    input_shape[2] if input_shape[2] is not None else None
         else:
             height = self.output_size[0]
             width = self.output_size[1]
@@ -235,6 +236,10 @@ def _make_divisible(v, divisor, min_value=None):
 
 
 def _inverted_res_block(inputs, expansion, stride, alpha, filters, block_id, skip_connection, rate=1):
+    """
+    Inverted residual block with linear bottleneck from MobileNetV2: https://arxiv.org/pdf/1801.04381.pdf
+    """
+
     in_channels = inputs._keras_shape[-1]
     pointwise_conv_filters = int(filters * alpha)
     pointwise_filters = _make_divisible(pointwise_conv_filters, 8)
@@ -246,8 +251,7 @@ def _inverted_res_block(inputs, expansion, stride, alpha, filters, block_id, ski
         x = Conv2D(expansion * in_channels, kernel_size=1, padding='same',
                    use_bias=False, activation=None,
                    name=prefix + 'expand')(x)
-        x = BatchNormalization(epsilon=1e-3, momentum=0.999,
-                               name=prefix + 'expand_BN')(x)
+        x = BatchNormalization(epsilon=1e-3, momentum=0.999, name=prefix + 'expand_BN')(x)
         x = Activation(relu6, name=prefix + 'expand_relu')(x)
     else:
         prefix = 'expanded_conv_'
@@ -255,23 +259,16 @@ def _inverted_res_block(inputs, expansion, stride, alpha, filters, block_id, ski
     x = DepthwiseConv2D(kernel_size=3, strides=stride, activation=None,
                         use_bias=False, padding='same', dilation_rate=(rate, rate),
                         name=prefix + 'depthwise')(x)
-    x = BatchNormalization(epsilon=1e-3, momentum=0.999,
-                           name=prefix + 'depthwise_BN')(x)
+    x = BatchNormalization(epsilon=1e-3, momentum=0.999, name=prefix + 'depthwise_BN')(x)
 
     x = Activation(relu6, name=prefix + 'depthwise_relu')(x)
 
     # Project
-    x = Conv2D(pointwise_filters,
-               kernel_size=1, padding='same', use_bias=False, activation=None,
-               name=prefix + 'project')(x)
-    x = BatchNormalization(epsilon=1e-3, momentum=0.999,
-                           name=prefix + 'project_BN')(x)
+    x = Conv2D(pointwise_filters, 1, padding='same', use_bias=False, activation=None, name=prefix + 'project')(x)
+    x = BatchNormalization(epsilon=1e-3, momentum=0.999, name=prefix + 'project_BN')(x)
 
     if skip_connection:
         return Add(name=prefix + 'add')([inputs, x])
-
-    # if in_channels == pointwise_filters and stride == 1:
-    #    return Add(name='res_connect_' + str(block_id))([inputs, x])
 
     return x
 
@@ -378,59 +375,167 @@ def DeeplabV3plus(weights=None, input_tensor=None, input_shape=(512, 512, 3), nu
         x = _xception_block(x, [1536, 1536, 2048], 'exit_flow_block2',
                             skip_connection_type='none', stride=1, rate=exit_block_rates[1],
                             depth_activation=True)
-
     else:
         OS = 8
         first_block_filters = _make_divisible(32 * alpha, 8)
         x = Conv2D(first_block_filters,
                    kernel_size=3,
-                   strides=(2, 2), padding='same',
-                   use_bias=False, name='Conv')(img_input)
-        x = BatchNormalization(
-            epsilon=1e-3, momentum=0.999, name='Conv_BN')(x)
+                   strides=(2, 2),
+                   padding='same',
+                   use_bias=False,
+                   name='Conv'
+                   )(img_input)
+        x = BatchNormalization(epsilon=1e-3, momentum=0.999, name='Conv_BN')(x)
         x = Activation(relu6, name='Conv_Relu6')(x)
-
-        x = _inverted_res_block(x, filters=16, alpha=alpha, stride=1,
-                                expansion=1, block_id=0, skip_connection=False)
-
-        x = _inverted_res_block(x, filters=24, alpha=alpha, stride=2,
-                                expansion=6, block_id=1, skip_connection=False)
-        x = _inverted_res_block(x, filters=24, alpha=alpha, stride=1,
-                                expansion=6, block_id=2, skip_connection=True)
-
-        x = _inverted_res_block(x, filters=32, alpha=alpha, stride=2,
-                                expansion=6, block_id=3, skip_connection=False)
-        x = _inverted_res_block(x, filters=32, alpha=alpha, stride=1,
-                                expansion=6, block_id=4, skip_connection=True)
-        x = _inverted_res_block(x, filters=32, alpha=alpha, stride=1,
-                                expansion=6, block_id=5, skip_connection=True)
+        x = _inverted_res_block(x,
+                                block_id=0,
+                                filters=16,
+                                alpha=alpha,
+                                stride=1,
+                                expansion=1,
+                                skip_connection=False
+                                )
+        x = _inverted_res_block(x,
+                                block_id=1,
+                                filters=24,
+                                alpha=alpha,
+                                stride=2,
+                                expansion=6,
+                                skip_connection=False
+                                )
+        x = _inverted_res_block(x,
+                                block_id=2,
+                                filters=24,
+                                alpha=alpha,
+                                stride=1,
+                                expansion=6,
+                                skip_connection=True
+                                )
+        x = _inverted_res_block(x,
+                                block_id=3,
+                                filters=32,
+                                alpha=alpha,
+                                stride=2,
+                                expansion=6,
+                                skip_connection=False
+                                )
+        x = _inverted_res_block(x,
+                                block_id=4,
+                                filters=32,
+                                alpha=alpha,
+                                stride=1,
+                                expansion=6,
+                                skip_connection=True
+                                )
+        x = _inverted_res_block(x,
+                                block_id=5,
+                                filters=32,
+                                alpha=alpha,
+                                stride=1,
+                                expansion=6,
+                                skip_connection=True
+                                )
 
         # stride in block 6 changed from 2 -> 1, so we need to use rate = 2
-        x = _inverted_res_block(x, filters=64, alpha=alpha, stride=1,  # 1!
-                                expansion=6, block_id=6, skip_connection=False)
-        x = _inverted_res_block(x, filters=64, alpha=alpha, stride=1, rate=2,
-                                expansion=6, block_id=7, skip_connection=True)
-        x = _inverted_res_block(x, filters=64, alpha=alpha, stride=1, rate=2,
-                                expansion=6, block_id=8, skip_connection=True)
-        x = _inverted_res_block(x, filters=64, alpha=alpha, stride=1, rate=2,
-                                expansion=6, block_id=9, skip_connection=True)
+        x = _inverted_res_block(x,
+                                block_id=6,
+                                filters=64,
+                                alpha=alpha,
+                                stride=1,  # 1!
+                                expansion=6,
+                                skip_connection=False
+                                )
+        x = _inverted_res_block(x,
+                                block_id=7,
+                                filters=64,
+                                alpha=alpha,
+                                stride=1,
+                                rate=2,
+                                expansion=6,
+                                skip_connection=True
+                                )
+        x = _inverted_res_block(x,
+                                block_id=8,
+                                filters=64,
+                                alpha=alpha,
+                                stride=1,
+                                rate=2,
+                                expansion=6,
+                                skip_connection=True
+                                )
+        x = _inverted_res_block(x,
+                                block_id=9,
+                                filters=64,
+                                alpha=alpha,
+                                stride=1,
+                                rate=2,
+                                expansion=6,
+                                skip_connection=True
+                                )
+        x = _inverted_res_block(x,
+                                block_id=10,
+                                filters=96,
+                                alpha=alpha,
+                                stride=1,
+                                rate=2,
+                                expansion=6,
+                                skip_connection=False
+                                )
+        x = _inverted_res_block(x,
+                                block_id=11,
+                                filters=96,
+                                alpha=alpha,
+                                stride=1,
+                                rate=2,
+                                expansion=6,
+                                skip_connection=True
+                                )
+        x = _inverted_res_block(x,
+                                block_id=12,
+                                filters=96,
+                                alpha=alpha,
+                                stride=1,
+                                rate=2,
+                                expansion=6,
+                                skip_connection=True
+                                )
+        x = _inverted_res_block(x,
+                                block_id=13,
+                                filters=160,
+                                alpha=alpha,
+                                stride=1,
+                                rate=2,  # 1!
+                                expansion=6,
+                                skip_connection=False
+                                )
+        x = _inverted_res_block(x,
+                                block_id=14,
+                                filters=160,
+                                alpha=alpha,
+                                stride=1,
+                                rate=4,
+                                expansion=6,
+                                skip_connection=True
+                                )
+        x = _inverted_res_block(x,
+                                block_id=15,
+                                filters=160,
+                                alpha=alpha,
+                                stride=1,
+                                rate=4,
+                                expansion=6,
+                                skip_connection=True
+                                )
 
-        x = _inverted_res_block(x, filters=96, alpha=alpha, stride=1, rate=2,
-                                expansion=6, block_id=10, skip_connection=False)
-        x = _inverted_res_block(x, filters=96, alpha=alpha, stride=1, rate=2,
-                                expansion=6, block_id=11, skip_connection=True)
-        x = _inverted_res_block(x, filters=96, alpha=alpha, stride=1, rate=2,
-                                expansion=6, block_id=12, skip_connection=True)
-
-        x = _inverted_res_block(x, filters=160, alpha=alpha, stride=1, rate=2,  # 1!
-                                expansion=6, block_id=13, skip_connection=False)
-        x = _inverted_res_block(x, filters=160, alpha=alpha, stride=1, rate=4,
-                                expansion=6, block_id=14, skip_connection=True)
-        x = _inverted_res_block(x, filters=160, alpha=alpha, stride=1, rate=4,
-                                expansion=6, block_id=15, skip_connection=True)
-
-        x = _inverted_res_block(x, filters=320, alpha=alpha, stride=1, rate=4,
-                                expansion=6, block_id=16, skip_connection=False)
+        x = _inverted_res_block(x,
+                                block_id=16,
+                                filters=320,
+                                alpha=alpha,
+                                stride=1,
+                                rate=4,
+                                expansion=6,
+                                skip_connection=False
+                                )
 
     # end of feature extractor
 
@@ -439,8 +544,7 @@ def DeeplabV3plus(weights=None, input_tensor=None, input_shape=(512, 512, 3), nu
     # Image Feature branch
     #out_shape = int(np.ceil(input_shape[0] / OS))
     b4 = AveragePooling2D(pool_size=(int(np.ceil(input_shape[0] / OS)), int(np.ceil(input_shape[1] / OS))))(x)
-    b4 = Conv2D(256, (1, 1), padding='same',
-                use_bias=False, name='image_pooling')(b4)
+    b4 = Conv2D(256, (1, 1), padding='same', use_bias=False, name='image_pooling')(b4)
     b4 = BatchNormalization(name='image_pooling_BN', epsilon=1e-5)(b4)
     b4 = Activation('relu')(b4)
     b4 = BilinearUpsampling((int(np.ceil(input_shape[0] / OS)), int(np.ceil(input_shape[1] / OS))))(b4)
@@ -530,10 +634,12 @@ def custom_objects(num_classes):
         'relu6': relu6,
         'DepthwiseConv2D': DepthwiseConv2D,
         'BilinearUpsampling': BilinearUpsampling,
+        # 'BilinearUpSampling2D': BilinearUpSampling2D,
         'dice_coef_loss': metrics.dice_coef_loss,
         'dice_coef': metrics.dice_coef,
         'recall': metrics.recall,
         'precision': metrics.precision,
+        'f1_score': metrics.f1_score,
         'mean_iou': metrics.MeanIoU(num_classes).mean_iou
     }
 
@@ -547,5 +653,6 @@ def custom_objects(num_classes):
 # if you want more detailed description, google any Keras tutorials
 # There are few important moments with this model:
 #
-# It is important to have a big batch to train BN layers properly, in order to do that you can train with OS 16 and inference with OS 8
-# you can also freeze first 356 layers and train only decoder with big batch size first, then unfreeze all layers and train with smaller batch size
+# It is important to have a big batch to train BN layers properly, in order to do that you can train with OS 16
+# and inference with OS 8 you can also freeze first 356 layers and train only decoder with big batch size first,
+# then unfreeze all layers and train with smaller batch size

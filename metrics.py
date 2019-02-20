@@ -57,12 +57,6 @@ def bce_dice_loss(y_true, y_pred):
     return binary_crossentropy(y_true, y_pred) + dice_coef_loss(y_true, y_pred)
 
 
-def greet_curried(greeting):
-    def greet(name):
-        print(greeting + ', ' + name)
-    return greet
-
-
 # def get_mean_iou_metric(num_classes):
 #     def mean_iou(y_true, y_pred):
 #         score, up_opt = tf.metrics.mean_iou(y_true, y_pred, num_classes)

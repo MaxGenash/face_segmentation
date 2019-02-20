@@ -125,15 +125,18 @@ def _depthwise_conv_block(inputs, pointwise_conv_filters, alpha, depth_multiplie
                         depth_multiplier=depth_multiplier,
                         strides=strides,
                         use_bias=False,
-                        name='conv_dw_%d' % block_id)(inputs)
+                        name='conv_dw_%d' % block_id
+                        )(inputs)
     x = BatchNormalization(axis=channel_axis, name='conv_dw_%d_bn' % block_id)(x)
     x = Activation(relu6, name='conv_dw_%d_relu' % block_id)(x)
 
-    x = Conv2D(pointwise_conv_filters, (1, 1),
+    x = Conv2D(pointwise_conv_filters,
+               (1, 1),
                padding='same',
                use_bias=False,
                strides=(1, 1),
-               name='conv_pw_%d' % block_id)(x)
+               name='conv_pw_%d' % block_id
+               )(x)
     x = BatchNormalization(axis=channel_axis, name='conv_pw_%d_bn' % block_id)(x)
     return Activation(relu6, name='conv_pw_%d_relu' % block_id)(x)
 
@@ -157,6 +160,7 @@ def MobileUNet(num_classes,
     b00 = _conv_block(img_input, 32, alpha, strides=(2, 2), block_id=0)
     b01 = _depthwise_conv_block(b00, 64, alpha, depth_multiplier, block_id=1)
 
+    # IF THERE ARE STRIDES - the size will we changed inside 2 times
     b02 = _depthwise_conv_block(b01, 128, alpha, depth_multiplier, block_id=2, strides=(2, 2))
     b03 = _depthwise_conv_block(b02, 128, alpha, depth_multiplier, block_id=3)
 
@@ -207,10 +211,9 @@ def MobileUNet(num_classes,
     # b18 = _depthwise_conv_block(up5, filters, alpha_up, depth_multiplier, block_id=18)
     b18 = _conv_block(up5, filters, alpha_up, block_id=18)
 
-    # x = Conv2D(1, (1, 1), kernel_initializer='he_normal', activation='linear')(b18)
     x = Conv2D(num_classes, (1, 1), kernel_initializer='he_normal', activation='linear')(b18)
     x = BilinearUpSampling2D(size=(2, 2))(x)
-    x = Activation('sigmoid')(x)
+    x = Activation('softmax')(x)
 
     model = Model(img_input, x, name='MobileUNet')
 
@@ -226,6 +229,7 @@ def custom_objects(num_classes):
         'dice_coef': metrics.dice_coef,
         'recall': metrics.recall,
         'precision': metrics.precision,
+        'f1_score': metrics.f1_score,
         'mean_iou': metrics.MeanIoU(num_classes).mean_iou
     }
 

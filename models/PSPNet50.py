@@ -5,14 +5,9 @@ from keras.layers.pooling import MaxPooling2D, AveragePooling2D
 from keras.layers.core import Activation, Dropout, Lambda
 from keras.layers.normalization import BatchNormalization
 from keras.layers.merge import add, concatenate
-from keras.optimizers import Adam
-from keras import backend as K
-
 import tensorflow as tf
-
-
-def dice_coef(y_true, y_pred):
-    return (2. * K.sum(y_true * y_pred) + 1.) / (K.sum(y_true) + K.sum(y_pred) + 1.)
+from scipy.misc import imresize
+import metrics
 
 
 def conv_block(input_tensor, filters, strides, d_rates):
@@ -62,14 +57,14 @@ def pyramid_pooling_block(input_tensor, bin_sizes):
     for bin_size in bin_sizes:
         x = AveragePooling2D(pool_size=(h//bin_size, w//bin_size), strides=(h//bin_size, w//bin_size))(input_tensor)
         x = Conv2D(512, kernel_size=1)(x)
-        x = Lambda(lambda x: tf.image.resize_images(x, (h, w)))(x)
+        x = Lambda(lambda x: imresize(x, (h, w)))(x)
 
         concat_list.append(x)
 
     return concatenate(concat_list)
 
 
-def pspnet50(num_classes, input_shape, lr_init, lr_decay):
+def PSPNet50(num_classes, input_shape):
     img_input = Input(input_shape)
 
     x = Conv2D(64, kernel_size=3, strides=(2, 2), padding='same')(img_input)
@@ -117,9 +112,21 @@ def pspnet50(num_classes, input_shape, lr_init, lr_decay):
     x = Conv2DTranspose(num_classes, kernel_size=(16, 16), strides=(8, 8), padding='same')(x)
     x = Activation('softmax')(x)
 
-    model = Model(img_input, x)
-    model.compile(optimizer=Adam(lr=lr_init, decay=lr_decay),
-                  loss='categorical_crossentropy',
-                  metrics=[dice_coef])
+    model = Model(img_input, x, name='PSPNet50')
 
     return model
+
+
+def custom_objects(num_classes):
+    return {
+        'tf': tf,
+        'conv_block': conv_block,
+        'identity_block': identity_block,
+        'pyramid_pooling_block': pyramid_pooling_block,
+        'dice_coef_loss': metrics.dice_coef_loss,
+        'dice_coef': metrics.dice_coef,
+        'recall': metrics.recall,
+        'precision': metrics.precision,
+        'f1_score': metrics.f1_score,
+        'mean_iou': metrics.MeanIoU(num_classes).mean_iou
+    }
